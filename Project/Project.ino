@@ -1,0 +1,217 @@
+/* Heltec Automation LoRaWAN communication example
+ *
+ * Function:
+ * 1. Upload node data to the server using the standard LoRaWAN protocol.
+ *  
+ * Description:
+ * 1. Communicate using LoRaWAN protocol.
+ * 
+ * HelTec AutoMation, Chengdu, China
+ * 成都惠利特自动化科技有限公司
+ * www.heltec.org
+ *
+ * */
+
+#include "LoRaWan_APP.h"
+
+/* OTAA para*/
+uint8_t devEui[] = { 0x0D, 0xA0, 0x20, 0x02, 0xC0, 0xC6, 0x05, 0x70 };
+uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t appKey[] = { 0x35, 0x71, 0xC2, 0x8E, 0x67, 0xB3, 0x40, 0x6D, 0x76, 0x53, 0x2A, 0x0B, 0xA0, 0xBA, 0x1A, 0x4C };
+
+
+/*LoraWan channelsmask, default channels 0-7*/ 
+uint16_t userChannelsMask[6]={ 0x00FF,0x0000,0x0000,0x0000,0x0000,0x0000 };
+
+/*LoraWan region, select in arduino IDE tools*/
+LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
+
+/*LoraWan Class, Class A and Class C are supported*/
+DeviceClass_t  loraWanClass = CLASS_A;
+
+/*the application data transmission duty cycle.  value in [ms].*/
+uint32_t appTxDutyCycle = 15000;
+
+/*OTAA or ABP*/
+bool overTheAirActivation = true;
+
+/*ADR enable*/
+bool loraWanAdr = true;
+
+/* Indicates if the node is sending confirmed or unconfirmed messages */
+bool isTxConfirmed = true;
+
+/* Application port */
+uint8_t appPort = 2;
+/*!
+* Number of trials to transmit the frame, if the LoRaMAC layer did not
+* receive an acknowledgment. The MAC performs a datarate adaptation,
+* according to the LoRaWAN Specification V1.0.2, chapter 18.4, according
+* to the following table:
+*
+* Transmission nb | Data Rate
+* ----------------|-----------
+* 1 (first)       | DR
+* 2               | DR
+* 3               | max(DR-1,0)
+* 4               | max(DR-1,0)
+* 5               | max(DR-2,0)
+* 6               | max(DR-2,0)
+* 7               | max(DR-3,0)
+* 8               | max(DR-3,0)
+*
+* Note, that if NbTrials is set to 1 or 2, the MAC will not decrease
+* the datarate, in case the LoRaMAC layer did not receive an acknowledgment
+*/
+uint8_t confirmedNbTrials = 4;
+
+/* Prepares the payload of the frame */
+static void prepareTxFrame( uint8_t port )
+{
+  /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
+  *appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
+  *if enabled AT, don't modify LORAWAN_APP_DATA_MAX_SIZE, it may cause system hanging or failure.
+  *if disabled AT, LORAWAN_APP_DATA_MAX_SIZE can be modified, the max value is reference to lorawan region and SF.
+  *for example, if use REGION_CN470, 
+  *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
+  */
+    appDataSize = 4;
+    appData[0] = 0x00;
+    appData[1] = 0x01;
+    appData[2] = 0x02;
+    appData[3] = 0x03;
+}
+
+//if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ 
+
+
+void setup() {
+  Serial.begin(115200);
+  Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
+}
+
+void loop()
+{
+  switch( deviceState )
+  {
+    case DEVICE_STATE_INIT:
+    {
+#if(LORAWAN_DEVEUI_AUTO)
+      LoRaWAN.generateDeveuiByChipID();
+#endif
+      LoRaWAN.init(loraWanClass,loraWanRegion);
+      //both set join DR and DR when ADR off 
+      LoRaWAN.setDefaultDR(3);
+      break;
+    }
+    case DEVICE_STATE_JOIN:
+    {
+      LoRaWAN.join();
+      break;
+    }
+    case DEVICE_STATE_SEND:
+    {
+      prepareTxFrame( appPort );
+      LoRaWAN.send();
+      deviceState = DEVICE_STATE_CYCLE;
+      break;
+    }
+    case DEVICE_STATE_CYCLE:
+    {
+      // Schedule next packet transmission
+      txDutyCycleTime = appTxDutyCycle + randr( -APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND );
+      LoRaWAN.cycle(txDutyCycleTime);
+      deviceState = DEVICE_STATE_SLEEP;
+      break;
+    }
+    case DEVICE_STATE_SLEEP:
+    {
+      LoRaWAN.sleep(loraWanClass);
+      break;
+    }
+    default:
+    {
+      deviceState = DEVICE_STATE_INIT;
+      break;
+    }
+  }
+}
+
+
+
+// WIFIIIIIII
+#include <SPI.h>
+#include <WiFi.h>
+
+void setup() {
+  //Initialize serial and wait for port to open:
+  Serial.begin(9600);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+  // check for the presence of the shield:
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println("WiFi shield not present");
+    // don't continue:
+    while (true);
+  }
+
+  // Print WiFi MAC address:
+  printMacAddress();
+}
+
+void loop() {
+  // scan for existing networks:
+  Serial.println("Scanning available networks...");
+  listNetworks();
+  delay(10000);
+}
+
+void printMacAddress() {
+  // the MAC address of your Wifi shield
+  byte mac[6];
+
+  // print your MAC address:
+  WiFi.macAddress(mac);
+  Serial.print("MAC: ");
+  Serial.print(mac[5], HEX);
+  Serial.print(":");
+  Serial.print(mac[4], HEX);
+  Serial.print(":");
+  Serial.print(mac[3], HEX);
+  Serial.print(":");
+  Serial.print(mac[2], HEX);
+  Serial.print(":");
+  Serial.print(mac[1], HEX);
+  Serial.print(":");
+  Serial.println(mac[0], HEX);
+}
+
+void listNetworks() {
+  // scan for nearby networks:
+  Serial.println("** Scan Networks **");
+  int numSsid = WiFi.scanNetworks();
+  if (numSsid == -1) {
+    Serial.println("Couldn't get a wifi connection");
+    while (true);
+  }
+
+  // print the list of networks seen:
+  Serial.print("number of available networks:");
+  Serial.println(numSsid);
+
+  // print the network number and name for each network found:
+  for (int thisNet = 0; thisNet < numSsid; thisNet++) {
+    Serial.print(thisNet);
+    Serial.print(") ");
+    Serial.print(WiFi.SSID(thisNet));
+    Serial.print("\tSignal: ");
+    Serial.print(WiFi.RSSI(thisNet));
+    Serial.print(" dBm");
+    Serial.print("\tBSSID ");
+    Serial.print(WiFi.BSSIDstr(thisNet));
+    Serial.print("\t");
+  }
+  Serial.println();
+}
