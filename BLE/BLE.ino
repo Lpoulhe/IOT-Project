@@ -12,24 +12,39 @@ void setup() {
 }
 
 void loop() {
-  // begin initialization
-
   Serial.println("BLE Central scan");
+  
 
-  // start scanning for peripheral
+  BLE.scan(); 
 
-  BLE.scan();
+  delay(4000); // Scan pendant 4s
+
 
   BLEDevice peripheral = BLE.available();
+  int count = 0;
 
-  if (peripheral) {
-    Serial.println(peripheral.address());
+  // Tant qu'il y a des périphériques disponibles à traiter
+  while (peripheral) {
+    Serial.print("Device found: ");
+    Serial.print(peripheral.address());
+    Serial.print(" (RSSI: ");
+    Serial.print(peripheral.rssi());
+    Serial.println(" dBm)");
 
 
-  } else {
-    Serial.println("Found none");
+    count++;
+    peripheral = BLE.available(); 
   }
-  delay(5000);
-  BLE.stopScan();
-}
 
+  BLE.stopScan(); //A mon avis ca effface la liste des périphériques donc faut le mettre après BLE.available()
+
+  if (count == 0) {
+    Serial.println("Nothing found.");
+  } else {
+    Serial.print("Scan is over. Devices found : ");
+    Serial.println(count);
+  }
+
+  
+  delay(5000); 
+}
