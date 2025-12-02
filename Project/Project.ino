@@ -13,12 +13,29 @@
  * */
 
 #include "LoRaWan_APP.h"
+#include <ArduinoBLE.h>
+#include <SPI.h>
+#include <WiFi.h>
+
+// #include <Wire.h>  
+// #include "HT_SSD1306Wire.h"
+
+// #ifdef WIRELESS_STICK_V3
+// static SSD1306Wire  display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_64_32, RST_OLED); // addr , freq , i2c group , resolution , rst
+// #else
+// static SSD1306Wire  display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED); // addr , freq , i2c group , resolution , rst
+// #endif
+
 
 /* OTAA para*/
 uint8_t devEui[] = { 0x0D, 0xA0, 0x20, 0x02, 0xC0, 0xC6, 0x05, 0x70 };
 uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 uint8_t appKey[] = { 0x35, 0x71, 0xC2, 0x8E, 0x67, 0xB3, 0x40, 0x6D, 0x76, 0x53, 0x2A, 0x0B, 0xA0, 0xBA, 0x1A, 0x4C };
 
+/* ABP para*/
+uint8_t nwkSKey[] = { 0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda,0x85 };
+uint8_t appSKey[] = { 0xd7, 0x2c, 0x78, 0x75, 0x8c, 0xdc, 0xca, 0xbf, 0x55, 0xee, 0x4a, 0x77, 0x8d, 0x16, 0xef,0x67 };
+uint32_t devAddr =  ( uint32_t )0x007e6ae1;
 
 /*LoraWan channelsmask, default channels 0-7*/ 
 uint16_t userChannelsMask[6]={ 0x00FF,0x0000,0x0000,0x0000,0x0000,0x0000 };
@@ -66,7 +83,7 @@ uint8_t appPort = 2;
 uint8_t confirmedNbTrials = 4;
 
 /* Prepares the payload of the frame */
-static void prepareTxFrame( uint8_t port )
+static void prepareTxFrame( uint8_t port, int wifi_count, int ble_count, int rssi )
 {
   /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
   *appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
@@ -75,30 +92,93 @@ static void prepareTxFrame( uint8_t port )
   *for example, if use REGION_CN470, 
   *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
   */
-    appDataSize = 4;
-    appData[0] = 0x00;
-    appData[1] = 0x01;
-    appData[2] = 0x02;
-    appData[3] = 0x03;
+    appDataSize = 3;
+    appData[0] = (uint8_t)wifi_count;
+    appData[1] = (uint8_t)ble_count;
+    appData[2] = (uint8_t)rssi;
 }
 
 //if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ 
 
 
 void setup() {
+  // VextON();
   Serial.begin(115200);
   Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
+
+    // check for the presence of the shield:
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println("WiFi shield not present");
+    // don't continue:
+    while (true);
+  }
+
+  if (!BLE.begin()) {
+
+    Serial.println("starting Bluetooth® Low Energy module failed!");
+    while (1);
+
+  }
+  // printBuffer("Setup done!");
 }
 
 void loop()
 {
+  int rssi = 0;
+  int wifi_count = 0;
+  int ble_count = 0;
+
+  if (deviceState == DEVICE_STATE_SEND)
+  {
+
+
+    Serial.println("BLE Central scan");
+
+    BLE.scan(); 
+
+    delay(5000); // Scan pendant 4s
+
+
+    BLEDevice peripheral = BLE.available();
+
+    char* name = "ESP32";
+
+    // Tant qu'il y a des périphériques disponibles à traiter
+    while (peripheral) {
+      if (peripheral.hasLocalName()) {
+        if (peripheral.localName() == name){
+          rssi = (int)peripheral.rssi();
+        } else {
+          rssi = 0;
+        }
+      }
+
+      ble_count++;
+      peripheral = BLE.available(); 
+    }
+
+    BLE.stopScan(); //A mon avis ca effface la liste des périphériques donc faut le mettre après BLE.available()
+
+    if (ble_count == 0) {
+      Serial.println("Nothing found.");
+    } else {
+      Serial.print("Scan is over. Devices found : ");
+      Serial.println(ble_count);
+    }
+    delay(5000);
+
+   // scan for existing networks
+    Serial.println("Scanning available networks...");
+    wifi_count = listNetworks();
+  }
+
+  
+
+
   switch( deviceState )
   {
     case DEVICE_STATE_INIT:
     {
-#if(LORAWAN_DEVEUI_AUTO)
-      LoRaWAN.generateDeveuiByChipID();
-#endif
       LoRaWAN.init(loraWanClass,loraWanRegion);
       //both set join DR and DR when ADR off 
       LoRaWAN.setDefaultDR(3);
@@ -111,7 +191,7 @@ void loop()
     }
     case DEVICE_STATE_SEND:
     {
-      prepareTxFrame( appPort );
+      prepareTxFrame( appPort, wifi_count, ble_count, rssi );
       LoRaWAN.send();
       deviceState = DEVICE_STATE_CYCLE;
       break;
@@ -127,6 +207,7 @@ void loop()
     case DEVICE_STATE_SLEEP:
     {
       LoRaWAN.sleep(loraWanClass);
+
       break;
     }
     default:
@@ -135,83 +216,46 @@ void loop()
       break;
     }
   }
+  // delay(10000);
 }
 
 
 
-// WIFIIIIIII
-#include <SPI.h>
-#include <WiFi.h>
 
-void setup() {
-  //Initialize serial and wait for port to open:
-  Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
 
-  // check for the presence of the shield:
-  if (WiFi.status() == WL_NO_SHIELD) {
-    Serial.println("WiFi shield not present");
-    // don't continue:
-    while (true);
-  }
-
-  // Print WiFi MAC address:
-  printMacAddress();
-}
-
-void loop() {
-  // scan for existing networks:
-  Serial.println("Scanning available networks...");
-  listNetworks();
-  delay(10000);
-}
-
-void printMacAddress() {
-  // the MAC address of your Wifi shield
-  byte mac[6];
-
-  // print your MAC address:
-  WiFi.macAddress(mac);
-  Serial.print("MAC: ");
-  Serial.print(mac[5], HEX);
-  Serial.print(":");
-  Serial.print(mac[4], HEX);
-  Serial.print(":");
-  Serial.print(mac[3], HEX);
-  Serial.print(":");
-  Serial.print(mac[2], HEX);
-  Serial.print(":");
-  Serial.print(mac[1], HEX);
-  Serial.print(":");
-  Serial.println(mac[0], HEX);
-}
-
-void listNetworks() {
+int listNetworks() {
   // scan for nearby networks:
   Serial.println("** Scan Networks **");
   int numSsid = WiFi.scanNetworks();
   if (numSsid == -1) {
     Serial.println("Couldn't get a wifi connection");
-    while (true);
+    return 0;
   }
 
   // print the list of networks seen:
-  Serial.print("number of available networks:");
-  Serial.println(numSsid);
-
-  // print the network number and name for each network found:
-  for (int thisNet = 0; thisNet < numSsid; thisNet++) {
-    Serial.print(thisNet);
-    Serial.print(") ");
-    Serial.print(WiFi.SSID(thisNet));
-    Serial.print("\tSignal: ");
-    Serial.print(WiFi.RSSI(thisNet));
-    Serial.print(" dBm");
-    Serial.print("\tBSSID ");
-    Serial.print(WiFi.BSSIDstr(thisNet));
-    Serial.print("\t");
-  }
-  Serial.println();
+  return numSsid;
 }
+
+void VextON(void)
+{
+  pinMode(Vext,OUTPUT);
+  digitalWrite(Vext, LOW);
+}
+
+void VextOFF(void) //Vext default OFF
+{
+  pinMode(Vext,OUTPUT);
+  digitalWrite(Vext, HIGH);
+}
+
+// void printBuffer(char* text) {
+//   // Initialize the log buffer
+//   // allocate memory to store 8 lines of text and 30 chars per line.
+//   display.clear();
+//   // Print to the screen
+//   display.println(text);
+//   // Draw it to the internal screen buffer
+//   // Display it on the screen
+//   display.display();
+//   delay(500);
+// }
