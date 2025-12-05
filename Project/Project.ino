@@ -1,30 +1,11 @@
-/* Heltec Automation LoRaWAN communication example
- *
- * Function:
- * 1. Upload node data to the server using the standard LoRaWAN protocol.
- *  
- * Description:
- * 1. Communicate using LoRaWAN protocol.
- * 
- * HelTec AutoMation, Chengdu, China
- * 成都惠利特自动化科技有限公司
- * www.heltec.org
- *
- * */
+
+
 
 #include "LoRaWan_APP.h"
 #include <ArduinoBLE.h>
 #include <SPI.h>
 #include <WiFi.h>
 
-// #include <Wire.h>  
-// #include "HT_SSD1306Wire.h"
-
-// #ifdef WIRELESS_STICK_V3
-// static SSD1306Wire  display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_64_32, RST_OLED); // addr , freq , i2c group , resolution , rst
-// #else
-// static SSD1306Wire  display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED); // addr , freq , i2c group , resolution , rst
-// #endif
 
 
 /* OTAA para*/
@@ -99,12 +80,15 @@ static void prepareTxFrame( uint8_t port, int wifi_count, int ble_count, int rss
 }
 
 //if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ 
-
+int ble_count =0;
+int wifi_count = 0;
+int rssi = 0;
 
 void setup() {
-  // VextON();
+  
+  
   Serial.begin(115200);
-  Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
+ 
 
     // check for the presence of the shield:
   if (WiFi.status() == WL_NO_SHIELD) {
@@ -119,45 +103,31 @@ void setup() {
     while (1);
 
   }
-  // printBuffer("Setup done!");
-}
 
-void loop()
-{
-  int rssi = 0;
-  int wifi_count = 0;
-  int ble_count = 0;
-
-  if (deviceState == DEVICE_STATE_SEND)
-  {
+  
+  Serial.println("BLE Central scan");
 
 
-    Serial.println("BLE Central scan");
-
-    BLE.scan(); 
-
-    delay(5000); // Scan pendant 4s
 
 
-    BLEDevice peripheral = BLE.available();
+  char* name = "ESP32";
 
-    char* name = "ESP32";
-
-    // Tant qu'il y a des périphériques disponibles à traiter
-    while (peripheral) {
-      if (peripheral.hasLocalName()) {
-        if (peripheral.localName() == name){
-          rssi = (int)peripheral.rssi();
-        } else {
-          rssi = 0;
+  unsigned long start = millis();
+  BLE.scan(); 
+  while (millis() - start < 5000) { 
+      BLEDevice peripheral = BLE.available();
+      if (peripheral) {
+        if (peripheral.hasLocalName()) {
+          if (peripheral.localName() == name){
+            rssi = (int)peripheral.rssi();
+          } else {
+            rssi = 0;
+          }
         }
+      ble_count++;
+      }
       }
 
-      ble_count++;
-      peripheral = BLE.available(); 
-    }
-
-    BLE.stopScan(); //A mon avis ca effface la liste des périphériques donc faut le mettre après BLE.available()
 
     if (ble_count == 0) {
       Serial.println("Nothing found.");
@@ -165,15 +135,23 @@ void loop()
       Serial.print("Scan is over. Devices found : ");
       Serial.println(ble_count);
     }
+    BLE.stopScan();
     delay(5000);
 
    // scan for existing networks
     Serial.println("Scanning available networks...");
     wifi_count = listNetworks();
-  }
-
+    Serial.print("WIFI AP: ");
+    Serial.println(wifi_count);
   
+  
+    Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
+  
+}
 
+void loop()
+{
+  
 
   switch( deviceState )
   {
@@ -190,7 +168,8 @@ void loop()
       break;
     }
     case DEVICE_STATE_SEND:
-    {
+    { 
+      
       prepareTxFrame( appPort, wifi_count, ble_count, rssi );
       LoRaWAN.send();
       deviceState = DEVICE_STATE_CYCLE;
@@ -206,6 +185,7 @@ void loop()
     }
     case DEVICE_STATE_SLEEP:
     {
+      
       LoRaWAN.sleep(loraWanClass);
 
       break;

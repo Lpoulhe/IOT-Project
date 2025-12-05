@@ -10,7 +10,7 @@ void setup() {
     while (1);
 
   }
-
+  BLE.setLocalName("ELB");
   BLE.setAdvertisedService(service); 
   BLE.advertise();
 }
