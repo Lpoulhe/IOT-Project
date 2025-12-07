@@ -108,8 +108,6 @@ void setup() {
   Serial.println("BLE Central scan");
 
 
-
-
   char* name = "ESP32";
 
   unsigned long start = millis();
@@ -128,21 +126,25 @@ void setup() {
       }
       }
 
-
+    BLE.stopScan();
     if (ble_count == 0) {
       Serial.println("Nothing found.");
     } else {
       Serial.print("Scan is over. Devices found : ");
       Serial.println(ble_count);
     }
-    BLE.stopScan();
-    delay(5000);
+
+   
+   
+    delay(1000);
 
    // scan for existing networks
     Serial.println("Scanning available networks...");
     wifi_count = listNetworks();
     Serial.print("WIFI AP: ");
     Serial.println(wifi_count);
+
+    delay(50000);
   
   
     Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
