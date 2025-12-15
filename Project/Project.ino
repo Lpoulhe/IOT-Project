@@ -79,49 +79,58 @@ static void prepareTxFrame( uint8_t port, int wifi_count, int ble_count, int rss
     appData[2] = (uint8_t)rssi;
 }
 
-//if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ 
+// Init variables
 int ble_count =0;
 int wifi_count = 0;
 int rssi = 0;
 
 void setup() {
   
-  
   Serial.begin(115200);
- 
 
-    // check for the presence of the shield:
+    // check for the presence of the shield for WIFI
   if (WiFi.status() == WL_NO_SHIELD) {
     Serial.println("WiFi shield not present");
     // don't continue:
     while (true);
   }
 
+  // Start BLE Module
   if (!BLE.begin()) {
 
-    Serial.println("starting Bluetooth® Low Energy module failed!");
+    Serial.println("Starting Bluetooth® Low Energy module failed!");
     while (1);
 
   }
 
-  
+  // BLE Scan 
   Serial.println("BLE Central scan");
 
-
-  char* name = "ESP32";
+  // Set device tracking name
+  char* name = "ELB";
+  int found = 0;
 
   unsigned long start = millis();
+  // Scan for unique BLE devices
   BLE.scan(); 
+  // Scan for 5s
   while (millis() - start < 5000) { 
       BLEDevice peripheral = BLE.available();
       if (peripheral) {
         if (peripheral.hasLocalName()) {
+          // Serial.print("Name " + peripheral.localName() +"\t");
+          // Look for specific name for device Tracking (part 4)
           if (peripheral.localName() == name){
+            Serial.print(peripheral.rssi());
+            Serial.print("\t");
             rssi = (int)peripheral.rssi();
-          } else {
+            found = 1;
+          // if tracked device isn't found, send rssi = 0
+          } else if (found == 0){
             rssi = 0;
           }
         }
+    // Add found BLE device to total device count
       ble_count++;
       }
       }
@@ -135,18 +144,17 @@ void setup() {
     }
 
    
-   
     delay(1000);
 
-   // scan for existing networks
+   // scan for existing WiFi APs
     Serial.println("Scanning available networks...");
     wifi_count = listNetworks();
     Serial.print("WIFI AP: ");
     Serial.println(wifi_count);
 
-    delay(50000);
+    delay(30000);
   
-  
+  // Start LoRa
     Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
   
 }
@@ -154,7 +162,7 @@ void setup() {
 void loop()
 {
   
-
+// LoRaWAN duty cycle handler
   switch( deviceState )
   {
     case DEVICE_STATE_INIT:
@@ -214,30 +222,5 @@ int listNetworks() {
     return 0;
   }
 
-  // print the list of networks seen:
   return numSsid;
 }
-
-void VextON(void)
-{
-  pinMode(Vext,OUTPUT);
-  digitalWrite(Vext, LOW);
-}
-
-void VextOFF(void) //Vext default OFF
-{
-  pinMode(Vext,OUTPUT);
-  digitalWrite(Vext, HIGH);
-}
-
-// void printBuffer(char* text) {
-//   // Initialize the log buffer
-//   // allocate memory to store 8 lines of text and 30 chars per line.
-//   display.clear();
-//   // Print to the screen
-//   display.println(text);
-//   // Draw it to the internal screen buffer
-//   // Display it on the screen
-//   display.display();
-//   delay(500);
-// }
